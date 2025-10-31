@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Study Subject Spin Wheel</title>
+  <style>
+    :root{--bg1:#4facfe;--bg2:#00f2fe}
+    *{box-sizing:border-box}
+    body{
+      display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;margin:0;
+      background:linear-gradient(135deg,var(--bg1),var(--bg2));font-family:Poppins,system-ui,Segoe UI,Roboto; color:#fff;
+    }
+    .card{background:rgba(255,255,255,0.06);padding:28px;border-radius:20px;box-shadow:0 8px 30px rgba(0,0,0,0.25);text-align:center}
+    canvas{display:block;margin:0 auto;max-width:420px;max-height:420px}
+    #spinBtn{margin-top:18px;padding:12px 22px;font-size:16px;background:#fff;color:#111;border:none;border-radius:12px;cursor:pointer;transition:transform .15s}
+    #spinBtn:active{transform:scale(.98)}
+    #result{margin-top:14px;height:34px;font-weight:700;opacity:0;transform:translateY(6px);transition:opacity .45s,transform .45s}
+
+    /* pointer */
+    .pointer{width:0;height:0;border-left:18px solid transparent;border-right:18px solid transparent;border-bottom:28px solid #fff;position:relative;top:-18px;margin-bottom:-8px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1 style="margin:0 0 12px 0">🎯 Study Subject Spin Wheel</h1>
+    <div class="pointer" aria-hidden="true"></div>
+    <canvas id="wheel" width="420" height="420" role="img" aria-label="Subject spin wheel"></canvas>
+
+    <button id="spinBtn">Spin 🎡</button>
+    <div id="result"> </div>
+  </div>
+
+  <script>
+    // Subjects + colors
+    const subjects = ['Compulsory Maths','Optional Maths','Science','Nepali','Social Studies','Education','English'];
+    const colors = ['#ff6384','#36a2eb','#ffce56','#4bc0c0','#9966ff','#ff9f40','#ffcd56'];
+
+    // Canvas setup
+    const canvas = document.getElementById('wheel');
+    const ctx = canvas.getContext('2d');
+    const cx = canvas.width/2, cy = canvas.height/2, radius = Math.min(cx,cy)-12;
+    const segmentCount = subjects.length;
+    const segAngle = (Math.PI*2)/segmentCount;
+
+    let rotation = 0; // current rotation in radians
+    let isSpinning = false;
+    let highlightIndex = -1; // hovered segment index
+
+    function drawWheel(){
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+
+      for(let i=0;i<segmentCount;i++){
+        const start = rotation + i*segAngle;
+        const end = start + segAngle;
+
+        // default fill: WHITE (user asked white when not hover)
+        ctx.beginPath();
+        ctx.moveTo(cx,cy);
+        ctx.arc(cx,cy,radius,start,end);
+        ctx.closePath();
+
+        if(i === highlightIndex){
+          ctx.fillStyle = colors[i]; // show color on hover
+        } else if(isSpinning && i===highlightIndex){
+          ctx.fillStyle = colors[i];
+        } else {
+          ctx.fillStyle = '#ffffff'; // default white
+        }
+        ctx.fill();
+
+        // colored border so segments are visible even when white
+        ctx.strokeStyle = colors[i];
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        // label - always shown in contrasting color (dark) on white, and white on colored fill
+        ctx.save();
+        // label angle and position
+        const mid = (start+end)/2;
+        const labelX = cx + Math.cos(mid)*(radius*0.62);
+        const labelY = cy + Math.sin(mid)*(radius*0.62);
+        ctx.translate(labelX,labelY);
+        ctx.rotate(mid + Math.PI/2);
+        ctx.font = 'bold 14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        if(i === highlightIndex){ ctx.fillStyle = '#fff'; } else { ctx.fillStyle = '#111'; }
+        // small padding background to make text readable
+        ctx.fillText(subjects[i],0,0);
+        ctx.restore();
+      }
+
+      // center circle
+      ctx.beginPath();ctx.arc(cx,cy,52,0,Math.PI*2);ctx.fillStyle='rgba(0,0,0,0.12)';ctx.fill();
+    }
+
+    // initial draw
+    drawWheel();
+
+    // pointer top position used to determine which segment is at pointer
+    function indexAtPointer(){
+      // pointer points at angle -90deg (i.e. -pi/2) relative to canvas center
+      const pointerAngle = (-Math.PI/2 - rotation) % (Math.PI*2);
+      // normalize
+      let a = pointerAngle;
+      if(a<0) a += Math.PI*2;
+      const idx = Math.floor(a/segAngle) % segmentCount;
+      return (segmentCount + idx) % segmentCount;
+    }
+
+    // hover handling
+    canvas.addEventListener('mousemove', (e)=>{
+      if(isSpinning) return; // ignore hover while spinning
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left - cx;
+      const y = e.clientY - rect.top - cy;
+      const angle = Math.atan2(y,x);
+      // convert to wheel space (rotation applied)
+      let adjusted = angle - rotation;
+      while(adjusted < 0) adjusted += Math.PI*2;
+      const idx = Math.floor(adjusted/segAngle) % segmentCount;
+      highlightIndex = idx;
+      drawWheel();
+    });
+
+    canvas.addEventListener('mouseleave', ()=>{ if(!isSpinning){ highlightIndex = -1; drawWheel(); } });
+
+    // Spin animation
+    const spinBtn = document.getElementById('spinBtn');
+    const resultDiv = document.getElementById('result');
+
+    function easeOutCubic(t){ return 1 - Math.pow(1-t,3); }
+
+    function spinToIndex(targetIndex){
+      if(isSpinning) return;
+      isSpinning = true;
+      resultDiv.style.opacity = 0; resultDiv.style.transform = 'translateY(6px)';
+
+      // calculate target rotation so that targetIndex lands at pointer (-pi/2)
+      // current rotation + spins*2pi + offset = -pi/2 - targetIndex*segAngle - segAngle/2 (centered)
+      const current = rotation % (Math.PI*2);
+      const randSpins = 3 + Math.floor(Math.random()*3); // 3 to 5 full spins
+      const targetAngle = -Math.PI/2 - (targetIndex + 0.5)*segAngle; // center of segment at pointer
+      // compute delta to rotate from current to targetAngle plus extra spins
+      let delta = (randSpins * Math.PI*2) + (targetAngle - current);
+      // ensure delta positive large enough
+      if(delta < 0) delta += Math.PI*2;
+      const duration = 3000 + Math.floor(Math.random()*800); // ms
+      const start = performance.now();
+
+      function frame(now){
+        const elapsed = now - start;
+        const t = Math.min(1, elapsed / duration);
+        const eased = easeOutCubic(t);
+        rotation = current + delta * eased;
+        drawWheel();
+
+        if(t < 1){ requestAnimationFrame(frame); }
+        else { // finished
+          isSpinning = false;
+          // final index correction
+          rotation = current + delta;
+          highlightIndex = targetIndex;
+          drawWheel();
+          // flash the selected segment with small pulse
+          flashSelected(targetIndex);
+        }
+      }
+      requestAnimationFrame(frame);
+    }
+
+    function flashSelected(i){
+      const times = 6;
+      let count=0;
+      const orig = highlightIndex;
+      const iv = setInterval(()=>{
+        highlightIndex = (count%2===0)?i:-1;
+        drawWheel();
+        count++;
+        if(count>times){ clearInterval(iv); highlightIndex = i; drawWheel(); showResult(i); }
+      },120);
+    }
+
+    function showResult(i){
+      resultDiv.textContent = `📘 You should study: ${subjects[i]}!`;
+      resultDiv.style.opacity = 1; resultDiv.style.transform='translateY(0)';
+      // small confetti-like CSS animation could be added, but keeping lightweight
+    }
+
+    // On click, pick random index and spin
+    spinBtn.addEventListener('click', ()=>{
+      if(isSpinning) return;
+      const rand = Math.floor(Math.random()*segmentCount);
+      spinToIndex(rand);
+    });
+
+    // Allow keyboard spin with Space or Enter
+    document.addEventListener('keydown',(e)=>{ if(e.code==='Space' || e.key==='Enter'){ e.preventDefault(); spinBtn.click(); } });
+
+    // In case user wants to programmatically choose a subject later
+    // expose function to window
+    window.spinTo = (idx)=>{ if(typeof idx==='number' && idx>=0 && idx<segmentCount) spinToIndex(idx); }
+  </script>
+</body>
+</html>
